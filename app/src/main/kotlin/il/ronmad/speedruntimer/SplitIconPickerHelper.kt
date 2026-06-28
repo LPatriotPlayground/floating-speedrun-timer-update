@@ -1,9 +1,7 @@
 package il.ronmad.speedruntimer
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -17,19 +15,18 @@ class SplitIconPickerHelper(
             ActivityResultContracts.GetContent()
         ) { uri ->
             if (uri != null) {
-
                 try {
                     fragment.requireContext().contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
-                } catch (e: SecurityException) {  }
+                } catch (e: SecurityException) { }
             }
             onResult(uri)
         }
 
+    fun launch() = launcher.launch("image/*")
 
-    fun launch() = launcher.launch("image
     fun clearIcon(split: Split, context: android.content.Context) {
         split.iconUri?.let { uriStr ->
             try {
@@ -37,7 +34,7 @@ class SplitIconPickerHelper(
                     Uri.parse(uriStr),
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: SecurityException) { }
+            } catch (e: SecurityException) { }
         }
         split.iconUri = null
     }
