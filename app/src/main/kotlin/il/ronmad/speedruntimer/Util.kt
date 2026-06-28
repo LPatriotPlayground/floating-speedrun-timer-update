@@ -20,7 +20,7 @@ object Util {
     }
 
     fun formatDelta(deltaMs: Long): String {
-        val sign = if (deltaMs < 0) "−" else "+"
+        val sign = if (deltaMs < 0) "-" else "+"
         val abs  = Math.abs(deltaMs)
         val secs = abs / 1000
         val cents = (abs % 1000) / 10
