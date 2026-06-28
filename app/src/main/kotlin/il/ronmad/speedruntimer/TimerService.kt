@@ -38,6 +38,8 @@ class TimerService : Service() {
     private var hasSplits = false
     private var comparison: Comparison = Comparison.PERSONAL_BEST
 
+    private var timerState: TimerState? = null
+
     private lateinit var notificationManager: NotificationManager
     private lateinit var notificationBuilder: NotificationCompat.Builder
     private lateinit var receiver: BroadcastReceiver
@@ -252,7 +254,6 @@ class TimerService : Service() {
                         if (moved)
                             category.getGame().getPosition().set(mWindowParams.x, mWindowParams.y)
                         if (moved || System.currentTimeMillis() - touchTime >= 250) return false
-                        // Prevent accidental double-clicking
                         val currentTime = System.currentTimeMillis()
                         if (currentTime - prevTapTime < 400) return false
                         prevTapTime = currentTime
@@ -261,9 +262,9 @@ class TimerService : Service() {
                         if (Chronometer.running) {
                             if (splitTime < 0) return false
                             if (hasSplits) {
-                                // Split, or stop if on final split.
                                 val segmentTime = splitTime - currentSplitStartTime
                                 segmentTimes += segmentTime
+                                timerState?.onSplit(System.currentTimeMillis())
                                 if (prefs.getBoolean(getString(R.string.key_pref_timer_show_delta), true))
                                     getCurrentSplit()?.let { updateDelta(it, splitTime) }
 
@@ -273,7 +274,6 @@ class TimerService : Service() {
                                     timerStop()
                                 }
                             } else {
-                                // No splits, so just stop.
                                 timerStop()
                             }
                         } else {
@@ -303,10 +303,16 @@ class TimerService : Service() {
         })
 
         mBinding.root.setOnLongClickListener {
+            if (moved) return@setOnLongClickListener false
+
+            if (Chronometer.running && timerState?.canRevert == true) {
+                revertSplit()
+                return@setOnLongClickListener true
+            }
+
             val time = chronometer.timeElapsed
             val updateData = prefs.getBoolean(getString(R.string.key_pref_save_time_data), true)
             when {
-                moved -> return@setOnLongClickListener false
                 time <= 0 -> timerReset(updateData = false)
                 Chronometer.running || (category.bestTime > 0 && category.bestTime in 0..time) ->
                     timerReset(updateData = updateData)
@@ -336,6 +342,30 @@ class TimerService : Service() {
             }
             true
         }
+    }
+
+    private fun revertSplit() {
+        val state = timerState ?: return
+        if (!state.canRevert) return
+
+        val lastSegmentTime = segmentTimes.removeLastOrNull() ?: return
+        state.onRevert(System.currentTimeMillis())
+
+        currentSplitStartTime -= lastSegmentTime
+
+        if (splitsIter?.hasPrevious() == true) {
+            splitsIter?.previous()
+        }
+
+        val prevSplit = getCurrentSplit()
+        if (prevSplit != null) {
+            chronometer.compareAgainst = if (prevSplit.hasTime(comparison))
+                prevSplit.calculateSplitTime(comparison) else 0L
+            mBinding.currentSplit.text = prevSplit.name
+        }
+
+        mBinding.delta.visibility = View.GONE
+        showToast("↩ Split undone")
     }
 
     private fun setupDisplayPrefs() {
@@ -405,17 +435,27 @@ class TimerService : Service() {
     }
 
     private fun timerReset(newPB: Long = 0L, updateData: Boolean = true) {
+        if (updateData && segmentTimes.isNotEmpty()) {
+            val partial = segmentTimes.toLongArray()
+            SplitManager.recordReset(category, partial)
+            SplitManager.saveGames(applicationContext, SplitManager.loadGames(applicationContext))
+        }
+
         chronometer.reset()
         if (updateData) {
             if (newPB == 0L) {
                 category.incrementRunCount()
                 category.updateSplits(segmentTimes, false)
             } else {
+                val segArray = segmentTimes.toLongArray()
+                SplitManager.recordAttempt(category, segArray, newPB)
+                SplitManager.saveGames(applicationContext, SplitManager.loadGames(applicationContext))
                 category.updateData(bestTime = newPB, runCount = category.runCount + 1)
                 category.updateSplits(segmentTimes, true)
                 FSTWidget.forceUpdateWidgets(this)
             }
         }
+        timerState = null
         resetSplits()
         resetTimerPosition()
     }
@@ -436,6 +476,9 @@ class TimerService : Service() {
     }
 
     private fun timerStart() {
+        timerState = TimerState(category)
+        timerState?.onStart(System.currentTimeMillis(), category)
+
         if (hasSplits) {
             splitsIter = category.splits.listIterator()
             timerSplit()
@@ -450,53 +493,8 @@ class TimerService : Service() {
     }
 
     private fun timerStop() {
-        chronometer.stop()
-        mBinding.currentSplit.visibility = View.GONE
-    }
-
-    private fun getCurrentSplit(): Split? {
-        splitsIter?.previous()
-        return splitsIter?.next()
-    }
-
-    private fun updateDelta(currentSplit: Split, splitTime: Long) {
-        val segmentTime = splitTime - currentSplitStartTime
-        val delta = splitTime - currentSplit.calculateSplitTime(comparison)
-        mBinding.delta.text = delta.getFormattedTime(plusSign = true)
-        mBinding.delta.setTextColor(
-            when {
-                segmentTime < currentSplit.bestTime -> Chronometer.colorBestSegment
-                delta < 0 -> Chronometer.colorAhead
-                else -> Chronometer.colorBehind
-            }
-        )
-        mBinding.delta.visibility = if (!currentSplit.hasTime(comparison)) View.GONE else View.VISIBLE
-    }
-
-    companion object {
-
-        var IS_ACTIVE = false
-        var gameName = ""
-        var categoryName = ""
-
-        private val scope = CoroutineScope(Dispatchers.Main)
-
-        fun launchTimer(
-            context: Context?,
-            gameName: String,
-            categoryName: String,
-            minimizeIfNoGameLaunch: Boolean = true
-        ) = scope.launch {
-            context ?: return@launch
-            if (IS_ACTIVE) {
-                context.showToast(context.getString(R.string.toast_close_active_timer))
-                return@launch
-            }
-            if (!context.tryLaunchGame(gameName)) {
-                if (minimizeIfNoGameLaunch)
-                    context.minimizeApp()
-            }
-            context.startTimerService(gameName, categoryName)
-        }
-    }
-}
+        val splitTime = chronometer.timeElapsed
+        if (hasSplits && segmentTimes.isNotEmpty()) {
+            val segArray = segmentTimes.toLongArray()
+            SplitManager.recordAttempt(category, segArray, splitTime)
+      
