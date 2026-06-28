@@ -1,40 +1,44 @@
-package il.ronmad.speedruntimer.realm
+package il.ronmad.speedruntimer
 
-import com.google.gson.annotations.Expose
-import io.realm.RealmObject
-import io.realm.RealmResults
-import io.realm.annotations.Index
-import io.realm.annotations.LinkingObjects
-import io.realm.annotations.PrimaryKey
+import android.os.Parcelable
+import kotlinx.android.parcel.Parcelize
 
-open class Split : RealmObject(), HasPrimaryId {
+@Parcelize
+data class Split(
+    val name: String,
 
-    @PrimaryKey
-    override var id: Long = 0L
+    var pbTime: Long = 0L,
 
-    @Expose
-    @Index
-    var name: String = ""
+    var bestSegment: Long = 0L,
 
-    @Expose
-    var pbTime: Long = 0L
+    var iconUri: String? = null
+) : Parcelable {
 
-    @Expose
-    var bestTime: Long = 0L
-        set(value) {
-            field = if (value != 0L) value.coerceAtMost(pbTime) else pbTime
-        }
 
-    @LinkingObjects("splits")
-    val category: RealmResults<Category>? = null
+    val pbSegmentTime: Long
+        get() = pbTime
 
-    fun update(segmentTime: Long, isNewPB: Boolean) {
-        if (segmentTime == 0L) return
-        if (isNewPB) {
-            updateData(pbTime = segmentTime)
-        }
-        if (bestTime == 0L || segmentTime < bestTime) {
-            updateData(bestTime = segmentTime)
-        }
+    companion object {
+        const val NO_TIME = 0L
     }
+}
+
+@Parcelize
+data class Attempt(
+    val id: Long = System.currentTimeMillis(),
+    val totalTime: Long = 0L,
+    val segmentTimes: LongArray = LongArray(0),
+    val note: String = ""
+) : Parcelable {
+
+
+    val isComplete: Boolean get() = totalTime > 0L
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Attempt) return false
+        return id == other.id
+    }
+
+    override fun hashCode(): Int = id.hashCode()
 }
