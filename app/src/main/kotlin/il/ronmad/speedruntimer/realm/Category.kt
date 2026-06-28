@@ -1,39 +1,55 @@
-package il.ronmad.speedruntimer.realm
+package il.ronmad.speedruntimer
 
-import com.google.gson.annotations.Expose
-import io.realm.RealmList
-import io.realm.RealmObject
-import io.realm.RealmResults
-import io.realm.annotations.Index
-import io.realm.annotations.LinkingObjects
-import io.realm.annotations.PrimaryKey
+import android.os.Parcelable
+import kotlinx.android.parcel.Parcelize
 
-open class Category : RealmObject(), HasPrimaryId {
+enum class ComparisonTarget {
+    PERSONAL_BEST,
+    SUM_OF_BEST,
+    ATTEMPT,
+    NONE
+}
 
-    @PrimaryKey
-    override var id: Long = 0L
+@Parcelize
+data class Category(
+    val name: String,
+    val splits: MutableList<Split> = mutableListOf(),
+    val attempts: MutableList<Attempt> = mutableListOf(),
+    var comparisonTarget: ComparisonTarget = ComparisonTarget.PERSONAL_BEST,
+    var comparisonAttemptId: Long = -1L
+) : Parcelable {
 
-    @Expose
-    @Index
-    var name: String = ""
 
-    @Expose
-    var gameName: String = ""
+    val hasPb: Boolean get() = splits.any { it.pbTime > 0L }
 
-    var bestTime: Long = 0L
 
-    @Expose
-    var runCount: Int = 0
+    val comparisonAttempt: Attempt?
+        get() = attempts.firstOrNull { it.id == comparisonAttemptId }
 
-    @Expose
-    var splits: RealmList<Split> = RealmList()
 
-    @LinkingObjects("categories")
-    val game: RealmResults<Game>? = null
-
-    fun updateSplits(segmentTimes: List<Long>, isNewPB: Boolean) {
-        splits.forEachIndexed { index, split ->
-            split.update(segmentTimes.getOrElse(index) { 0L }, isNewPB)
+    val sumOfBestSegments: LongArray
+        get() {
+            val result = LongArray(splits.size) { splits[it].bestSegment }
+            return result
         }
+
+
+    fun comparisonSegmentTimes(): LongArray? = when (comparisonTarget) {
+        ComparisonTarget.PERSONAL_BEST -> {
+            if (!hasPb) null
+            else LongArray(splits.size) { i ->
+                if (i == 0) splits[0].pbTime
+                else splits[i].pbTime - splits[i - 1].pbTime
+            }
+        }
+        ComparisonTarget.SUM_OF_BEST -> {
+            val sob = sumOfBestSegments
+            if (sob.all { it == 0L }) null else sob
+        }
+        ComparisonTarget.ATTEMPT -> {
+            comparisonAttempt?.takeIf { it.segmentTimes.size == splits.size }
+                ?.segmentTimes
+        }
+        ComparisonTarget.NONE -> null
     }
 }
