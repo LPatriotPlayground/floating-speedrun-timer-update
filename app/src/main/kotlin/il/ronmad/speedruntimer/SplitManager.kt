@@ -103,7 +103,7 @@ object SplitManager {
     fun comparisonLabel(category: Category): String = when (category.comparisonTarget) {
         ComparisonTarget.PERSONAL_BEST -> "Personal Best"
         ComparisonTarget.SUM_OF_BEST   -> "Sum of Best"
-        ComparisonTarget.NONE          -> "—"
+        ComparisonTarget.NONE          -> "-"
         ComparisonTarget.ATTEMPT       -> {
             val attempt = category.comparisonAttempt
             if (attempt == null) "Custom Run"
