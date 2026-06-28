@@ -497,4 +497,8 @@ class TimerService : Service() {
         if (hasSplits && segmentTimes.isNotEmpty()) {
             val segArray = segmentTimes.toLongArray()
             SplitManager.recordAttempt(category, segArray, splitTime)
+
+}
+     }
+}
       
