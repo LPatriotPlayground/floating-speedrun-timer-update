@@ -64,7 +64,7 @@ object ComparisonPickerDialog {
         }
 
         AlertDialog.Builder(context)
-            .setTitle("Compare against…")
+            .setTitle("Compare against...")
             .setSingleChoiceItems(
                 items.map { it.label }.toTypedArray(),
                 currentIndex
